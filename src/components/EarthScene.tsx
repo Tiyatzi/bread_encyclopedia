@@ -230,19 +230,23 @@ function SceneContent() {
       <directionalLight position={[5, 3, 5]} intensity={1.4} />
       <directionalLight position={[-5, -1, -3]} intensity={0.4} />
 
-      <Starfield background={background} />
-      <Earth
-        ref={earthRef}
-        onClick={handleEarthClick}
-        texturePath={earthTexturePath}
-        autoRotate={autoRotate}
-      >
-        <BreadsLayer
-          hoveredId={hoveredId}
-          onHover={handleHover}
-          onSelect={handleSelect}
-        />
-      </Earth>
+      <Suspense fallback={null}>
+        <Starfield background={background} />
+      </Suspense>
+      <Suspense fallback={null}>
+        <Earth
+          ref={earthRef}
+          onClick={handleEarthClick}
+          texturePath={earthTexturePath}
+          autoRotate={autoRotate}
+        >
+          <BreadsLayer
+            hoveredId={hoveredId}
+            onHover={handleHover}
+            onSelect={handleSelect}
+          />
+        </Earth>
+      </Suspense>
       <OrbitControls
         ref={controlsRef}
         enableDamping
