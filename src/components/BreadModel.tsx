@@ -2,6 +2,7 @@
 
 import { useRef, useMemo } from "react";
 import { useGLTF } from "@react-three/drei";
+import { assetPath } from "@/lib/basePath";
 import { useFrame } from "@react-three/fiber";
 import {
   Object3D,
@@ -54,7 +55,7 @@ export default function BreadModel({
     return _quat;
   }, [position]);
 
-  const { scene } = useGLTF(bread.modelPath);
+  const { scene } = useGLTF(assetPath(bread.modelPath));
   const clonedScene = useMemo(() => {
     const cloned = scene.clone();
     cloned.traverse((child) => {

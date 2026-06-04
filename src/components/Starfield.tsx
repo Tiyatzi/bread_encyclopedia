@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { useTexture } from "@react-three/drei";
 import { BackSide } from "three";
 import type { Background } from "@/data/backgrounds";
+import { assetPath } from "@/lib/basePath";
 
 /** 代码生成的随机星点 */
 function GeneratedStars() {
@@ -71,7 +72,7 @@ interface StarfieldProps {
 
 export default function Starfield({ background }: StarfieldProps) {
   if (background.type === "image" && background.path) {
-    return <ImageSky path={background.path} />;
+    return <ImageSky path={assetPath(background.path)} />;
   }
   return <GeneratedStars />;
 }

@@ -10,6 +10,7 @@ import {
 import breads, { BreadData } from "@/data/breads";
 import earthTextures from "@/data/earthTextures";
 import backgrounds, { Background } from "@/data/backgrounds";
+import { assetPath } from "@/lib/basePath";
 
 export type ContinentFilter = "全部" | string;
 export type TypeFilter = "全部" | string;
@@ -64,7 +65,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   const earthTexturePath = useMemo(
-    () => earthTextures.find((t) => t.id === earthTextureId)?.path ?? earthTextures[0].path,
+    () => assetPath(earthTextures.find((t) => t.id === earthTextureId)?.path ?? earthTextures[0].path),
     [earthTextureId]
   );
 
