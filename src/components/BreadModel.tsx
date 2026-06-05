@@ -145,7 +145,11 @@ export default function BreadModel({
         />
       )}
 
-      <primitive object={clonedScene} scale={bread.modelScale ?? 0.08} />
+      <primitive
+        object={clonedScene}
+        scale={bread.modelScale ?? 0.08}
+        rotation={bread.modelRotation ?? [0, 0, 0]}
+      />
     </group>
   );
 }

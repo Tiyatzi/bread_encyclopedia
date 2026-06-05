@@ -12,6 +12,8 @@
 - [UI 组件说明](#ui-组件说明)
 - [常见操作速查](#常见操作速查)
 - [素材来源推荐](#素材来源推荐)
+- [模型朝向调试指南](#模型朝向调试指南)
+- [部署排障记录](#部署排障记录)
 
 ---
 
@@ -77,6 +79,7 @@ interface BreadData {
   difficulty: string;   // 制作难度（用于筛选）
   modelPath: string;    // 3D 模型路径
   modelScale?: number;  // 模型缩放比例，默认 0.08
+  modelRotation?: [number, number, number]; // 模型局部旋转修正 [x, y, z]，弧度，默认 [0,0,0]
   description: string;  // 一句话简介
   history: string;      // 历史介绍
   culture: string;      // 文化背景
@@ -211,9 +214,33 @@ modelScale: 0.08,  // 默认值
 modelScale: 0.15,  // 放大
 ```
 
+### 模型朝向修正
+
+不同 GLB 模型的内部坐标系可能不一致（有些 Y 朝上，有些 Z 朝上）。
+如果模型放到地球上后顶部没有朝外（歪了/倒了），用 `modelRotation` 修正：
+
+在 `src/data/breads/<id>.ts` 中设置 `modelRotation`：
+
+```typescript
+// 模型 Z 轴朝上的情况：绕 X 轴旋转 -90°
+modelRotation: [-Math.PI / 2, 0, 0],
+
+// 模型上下颠倒的情况：绕 X 轴旋转 180°
+modelRotation: [Math.PI, 0, 0],
+
+// 组合旋转（先 X 再 Y 再 Z，单位弧度）
+modelRotation: [-Math.PI / 2, 0, Math.PI / 4],
+```
+
+**排查方法**：在本地 `npm run dev` 中调整值，实时查看效果。
+
 实际渲染逻辑在 `src/components/BreadModel.tsx`：
 ```typescript
-<primitive object={clonedScene} scale={bread.modelScale ?? 0.08} />
+<primitive
+  object={clonedScene}
+  scale={bread.modelScale ?? 0.08}
+  rotation={bread.modelRotation ?? [0, 0, 0]}
+/>
 ```
 
 ### 模型格式转换
@@ -427,6 +454,7 @@ UI 左侧会自动出现切换按钮（只有一个背景时按钮自动隐藏�
 ```
 1. 新模型放到 public/models/<id>.glb
 2. 可选：调整 src/data/breads/<id>.ts 中的 modelScale
+3. 如果模型朝向不对，设置 modelRotation（见「模型朝向修正」）
 ```
 
 ### 新增一种面包
@@ -456,6 +484,12 @@ UI 左侧会自动出现切换按钮（只有一个背景时按钮自动隐藏�
 ### 调整模型大小
 ```
 编辑 src/data/breads/<id>.ts → modelScale（默认 0.08）
+```
+
+### 修正模型朝向
+```
+编辑 src/data/breads/<id>.ts → modelRotation（默认 [0, 0, 0]）
+常见：模型 Z 朝上 → [-Math.PI / 2, 0, 0]
 ```
 
 ### 本地开发
@@ -494,3 +528,208 @@ npx next build       # 构建检查
 | [Poly Haven](https://polyhaven.com/hdris/skies) | 搜 "starry sky"，免费 CC0 |
 | [ambientCG](https://ambientcg.com/) | 搜 "space"，免费 CC0 |
 | [Humus Textures](http://www.humus.name/index.php?page=Textures) | 免费天空全景 |
+
+---
+
+## 模型朝向调试指南
+
+### 原理说明
+
+每个面包模型在地球上的放置分两层旋转：
+
+```
+<group position={球面坐标} quaternion={法线对齐}>      ← 外层：让 Y+ 指向球面外侧
+  <primitive rotation={modelRotation} />                ← 内层：修正模型自身坐标系
+</group>
+```
+
+1. **外层（自动）**：`BreadModel.tsx` 用 `setFromUnitVectors(Y+, 球面法线)` 计算四元数，把模型的 Y 轴对齐到球面法线方向。这样只要模型自身的"顶部"是 Y+，放上去就是顶部朝外的。
+2. **内层（手动）**：不同建模软件导出的 GLB 坐标系不一致，需要通过 `modelRotation` 做局部修正。
+
+### 不同建模软件的坐标系差异
+
+| 软件 | 默认"上"方向 | 导出 GLB 后通常需要的 modelRotation |
+|------|-------------|-------------------------------------|
+| Blender（默认 Z-up） | Z+ | `[-Math.PI / 2, 0, 0]` |
+| Blender（已设 Y-up） | Y+ | `[0, 0, 0]`（无需修正） |
+| Maya / 3ds Max | Y+ | `[0, 0, 0]`（无需修正） |
+| SketchUp | Z+ | `[-Math.PI / 2, 0, 0]` |
+
+> GLB/glTF 规范要求 Y-up，但很多导出器不做转换，所以实际拿到的模型可能是任意朝向。
+
+### 调试步骤
+
+#### 第 1 步：放入模型，不设 modelRotation
+
+```typescript
+// src/data/breads/baguette.ts
+modelPath: "/models/baguette.glb",
+// 先不写 modelRotation
+```
+
+运行 `npm run dev`，观察模型在地球上的状态：
+- **正常**：面包顶部朝外，底部贴着球面 → 不需要修正
+- **侧躺**：面包横着 → 多半是 Z-up 模型
+- **倒立**：面包底部朝外 → 上下颠倒
+- **其他角度**：需要组合旋转
+
+#### 第 2 步：确定修正值
+
+| 观察到的现象 | 原因 | 修正值 |
+|-------------|------|--------|
+| 面包侧躺（Z 轴方向朝外） | 模型是 Z-up | `[-Math.PI / 2, 0, 0]` |
+| 面包倒立（底部朝外） | 上下颠倒 | `[Math.PI, 0, 0]` |
+| 面包侧躺且倒立 | Z-up + 颠倒 | `[Math.PI / 2, 0, 0]` |
+| 面包正面朝外但绕 Y 轴歪了 | 需要绕 Y 轴转 | `[0, 需要的弧度, 0]` |
+
+#### 第 3 步：写入配置
+
+```typescript
+// src/data/breads/baguette.ts
+modelRotation: [-Math.PI / 2, 0, 0],
+```
+
+保存后热更新会立即生效，反复微调直到满意。
+
+#### 第 4 步：用浏览器 DevTools 精调
+
+如果角度比较微妙，可以在浏览器控制台临时调试：
+
+```javascript
+// 找到场景中的面包模型
+const scene = document.querySelector('canvas').__r$;
+// 或者直接在 React DevTools 中找到 BreadModel 组件的 props
+```
+
+更方便的方式是在代码中临时加一个 `<axesHelper args={[0.3]} />` 来可视化坐标轴：
+
+```tsx
+// BreadModel.tsx 临时调试用，调完删掉
+<group ref={groupRef} position={position} quaternion={rotation}>
+  <axesHelper args={[0.3]} />  {/* 红=X 绿=Y 蓝=Z */}
+  <primitive ... />
+</group>
+```
+
+绿色轴（Y）应该指向球面外侧。如果不是，说明 `modelRotation` 还需要调整。
+
+### 弧度速查
+
+| 角度 | 弧度 |
+|------|------|
+| 30° | `Math.PI / 6` ≈ 0.524 |
+| 45° | `Math.PI / 4` ≈ 0.785 |
+| 90° | `Math.PI / 2` ≈ 1.571 |
+| 180° | `Math.PI` ≈ 3.142 |
+| -90° | `-Math.PI / 2` ≈ -1.571 |
+
+### 相关代码文件
+
+| 文件 | 作用 |
+|------|------|
+| `src/components/BreadModel.tsx:52-56` | 外层：法线对齐四元数计算 |
+| `src/components/BreadModel.tsx:148` | 内层：应用 `modelRotation` |
+| `src/data/types.ts` | `modelRotation` 类型定义 |
+| `src/utils/coordinates.ts` | `latLngToPosition` 经纬度转球面坐标 |
+
+---
+
+## 部署排障记录
+
+本项目从 Vercel 迁移到 GitHub Pages 的过程中遇到过以下问题，记录在此供后续参考。
+
+### 问题 1：GitHub Pages 3D 场景空白（已解决）
+
+**现象**：本地 `npm run dev` 正常显示，GitHub Pages 上只有空白画布，控制台仅有 `THREE.Clock: This module has been deprecated` 警告，无报错。
+
+**根因 A — 资源路径缺少 basePath 前缀**：
+
+GitHub Pages 部署在子路径 `/bread_encyclopedia/` 下，但 Three.js 的 `useTexture` / `useGLTF` 不经过 Next.js 路由，直接用 fetch 请求 `/textures/xxx.png`，实际应请求 `/bread_encyclopedia/textures/xxx.png`。
+
+最初在 `next.config.ts` 的 `env` 字段设置 `NEXT_PUBLIC_BASE_PATH`，但 Turbopack 没有正确内联这个值，导致运行时拿到空字符串。
+
+**修复**：改用 `.env.production` 文件设置环境变量：
+
+```
+# .env.production
+NEXT_PUBLIC_BASE_PATH=/bread_encyclopedia
+```
+
+`src/lib/basePath.ts` 中的 `assetPath()` 函数读取该变量拼接路径：
+
+```typescript
+export function assetPath(path: string): string {
+  const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+  return `${base}${path}`;
+}
+```
+
+**验证方法**：构建后在 `out/_next/static/chunks/` 的 JS 文件中搜索 `simple-sketches`，确认周围的 `assetPath` 函数已被内联为 `` `/bread_encyclopedia${e}` ``。
+
+**根因 B — 缺少 Suspense 边界**：
+
+`<Earth>` 和 `<Starfield>` 组件使用了 `useTexture`（drei 的纹理加载 hook），该 hook 内部使用 React Suspense 机制。但这两个组件没有被 `<Suspense>` 包裹，导致 suspend 时整个 R3F 场景挂起，没有 fallback 可以接住。
+
+在本地开发模式下因 HMR 和缓存可能偶尔能显示，但在生产构建中稳定复现空白。
+
+**修复**（`src/components/EarthScene.tsx`）：
+
+```tsx
+// 修复前 — Earth 和 Starfield 没有 Suspense 边界
+<Starfield background={background} />
+<Earth ref={earthRef} ...>
+  <BreadsLayer ... />
+</Earth>
+
+// 修复后 — 每个使用 useTexture/useGLTF 的组件都用 Suspense 包裹
+<Suspense fallback={null}>
+  <Starfield background={background} />
+</Suspense>
+<Suspense fallback={null}>
+  <Earth ref={earthRef} ...>
+    <BreadsLayer ... />
+  </Earth>
+</Suspense>
+```
+
+> **经验**：在 R3F 中，任何使用 `useTexture`、`useGLTF`、`useLoader` 等 drei hook 的组件都必须被 `<Suspense>` 包裹。`BreadsLayer` 内的每个 `<BreadModel>` 已有独立 Suspense 边界，但 Earth 和 Starfield 被遗漏了。
+
+### 问题 2：GitHub Pages 部署 404（已解决）
+
+**现象**：Pages 部署后访问返回 404。
+
+**根因**：GitHub Pages 默认使用 Jekyll 处理，会忽略以 `_` 开头的目录（如 `_next/`）。
+
+**修复**：在 `public/` 下添加空文件 `.nojekyll`，构建后会被复制到 `out/` 根目录。
+
+### 问题 3：电脑端已部署但仍显示空白（缓存）
+
+**现象**：手机端已能正常显示，电脑端仍然空白。
+
+**根因**：浏览器缓存了旧的 JS 文件。
+
+**修复**：`Ctrl + Shift + R` 强制刷新，或打开 DevTools → Network → 勾选 "Disable cache" 后刷新。
+
+### 问题 4：Windows `nul` 保留文件名导致 git 操作失败（已解决）
+
+**现象**：`git checkout` 或 `git clean` 时报错，提示无法创建文件 `nul`。
+
+**根因**：仓库历史中有名为 `nul` 的文件（Windows 保留设备名），Windows 无法创建该文件。
+
+**修复**：用 `cmd /c del \\?\<绝对路径>` 强制删除。
+
+### 部署相关配置一览
+
+| 文件 | 用途 |
+|------|------|
+| `next.config.ts` | `output: "export"`，`basePath`/`assetPrefix` 设为 `/bread_encyclopedia` |
+| `.env.production` | `NEXT_PUBLIC_BASE_PATH=/bread_encyclopedia`（构建时内联到 JS） |
+| `src/lib/basePath.ts` | `assetPath()` 函数，Three.js 资源路径拼接 |
+| `.github/workflows/deploy.yml` | GitHub Actions 自动构建 + 部署到 Pages |
+| `public/.nojekyll` | 防止 Jekyll 忽略 `_next/` 目录 |
+
+### GitHub Pages 设置
+
+在仓库 Settings → Pages 中：
+- **Source** 必须选 **GitHub Actions**（不是 "Deploy from a branch"）
+- 部署后访问 `https://<用户名>.github.io/bread_encyclopedia/`
